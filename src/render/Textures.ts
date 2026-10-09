@@ -566,3 +566,39 @@ export function setRepeat(t: THREE.Texture, rx: number, ry: number) {
   c.repeat.set(rx, ry);
   return c;
 }
+
+/** churned country road after rain: brown mud, two wet ruts with track-link imprints, gravel */
+export function mudRoadTexture() {
+  return paintTexture('mudroad', 1024, 256, (ctx, w, h) => {
+    const a = hexRgb('#5b4a37'), b = hexRgb('#6d5b44'), wet = hexRgb('#30271d'), edge = hexRgb('#75664b');
+    pixels(ctx, w, h, (x, y) => {
+      const u = (x / w) * 32, v = (y / h) * 8;
+      const n = N1.fbm(u, v, 5, 32);
+      let c = mixRgb(a, b, n);
+      // ruts: the wheel and track lines, wetter and darker, wandering slightly
+      const vv = y / h + (N2.fbm(u * 0.2, 1.3, 2, 8) - 0.5) * 0.08;
+      const rut = Math.exp(-(((vv - 0.3) / 0.075) ** 2)) + Math.exp(-(((vv - 0.7) / 0.075) ** 2));
+      c = mixRgb(c, wet, Math.min(1, rut * 0.75) * (0.7 + 0.3 * N3.sample(u * 3, v * 3, 128)));
+      // the crown between the ruts and the verges are drier and paler
+      const e = Math.min(y, h - y) / h;
+      c = mixRgb(c, edge, Math.max(0, 0.14 - e) / 0.14 * (0.5 + 0.5 * N3.sample(u * 2, v * 4, 64)));
+      const g = 0.86 + 0.28 * N3.sample(u * 6, v * 6, 128);
+      return [c[0] * g, c[1] * g, c[2] * g];
+    });
+    const r = new RNG(91);
+    // track-link imprints across both ruts (Sherman / Panzer IV pitch at this scale)
+    for (const band of [0.3, 0.7]) {
+      for (let x = 0; x < w; x += 7.5) {
+        ctx.fillStyle = `rgba(22,17,12,${r.range(0.18, 0.4)})`;
+        ctx.fillRect(x + r.range(-0.6, 0.6), h * (band - 0.065), 2.2, h * 0.13);
+      }
+    }
+    // gravel and stones
+    for (let i = 0; i < 900; i++) {
+      const g = r.range(70, 150);
+      ctx.fillStyle = `rgba(${g},${g * 0.93},${g * 0.82},${r.range(0.3, 0.7)})`;
+      const s = r.range(1, 3.2);
+      ctx.fillRect(r.range(0, w), r.range(0, h), s, s * r.range(0.6, 1));
+    }
+  }, { repeat: true });
+}

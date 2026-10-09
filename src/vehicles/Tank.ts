@@ -322,6 +322,7 @@ export class Tank {
     this.recoil = approach(this.recoil, 0, dt * (this.recoil > 0.25 ? 3.5 : 0.9));
     this.updateRepair(dt, w);
     this.syncTransforms();
+    this.model.rootInv.value.copy(this.root.matrixWorld).invert();
     this.updateVisuals(dt, w);
   }
 

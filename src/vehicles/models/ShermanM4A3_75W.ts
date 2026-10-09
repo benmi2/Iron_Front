@@ -3,6 +3,7 @@ import type { V3 } from '../../ballistics/ArmorMesh';
 import { usStarTexture } from '../../render/Textures';
 import { SCHEME_OD } from '../TankMaterials';
 import { TankBuilder, turretRing, type TankModel } from '../TankBuilder';
+import { antenna, bolts, boltRow, cable, coil, handle, hinge, rod, stowageBox, tool } from '../Details';
 
 /**
  * Medium Tank M4A3(75)W "Sherman" — late production: one-piece 47° glacis, wet stowage,
@@ -273,6 +274,60 @@ export function buildSherman(upgrades: Set<string> = new Set()): TankModel {
     b.track(circles, side * TRACK_Z, TRACK_W, 0.152, 0.065, 'chevron');
     b.externalPart(`Track & suspension (${side > 0 ? 'right' : 'left'})`, 'track', [0, 0.5, side * TRACK_Z], [5.5, 1.0, TRACK_W], 22, side);
   }
+
+  /* ================================================================ FINE DETAIL */
+  b.setFrame('hull');
+  // engine access doors on the upper rear plate: hinges, handles, latch bolts
+  const rearX = (y: number) => X_DECK_REAR - ((Y_ROOF - y) / (Y_ROOF - Y_SPONSON)) * (X_DECK_REAR - X_REAR_LOW);
+  for (const s of [-1, 1]) {
+    b.box([0.02, 0.7, 1.05], [rearX(1.47) - 0.012, 1.47, s * 0.58], 'paint', [0, 0, -0.17]);
+    hinge(b, [rearX(1.8) - 0.03, 1.8, s * 0.12], [rearX(1.8) - 0.03, 1.8, s * 1.05], 0.022, 3);
+    handle(b, [rearX(1.35) - 0.02, 1.35, s * 0.3], [rearX(1.35) - 0.02, 1.35, s * 0.55], [-1, 0, 0], 0.05);
+    boltRow(b, [rearX(1.15) - 0.024, 1.15, s * 0.12], [rearX(1.15) - 0.024, 1.15, s * 1.05], 6, [-1, 0, 0]);
+  }
+  // EE-8 field telephone box for the infantry (Normandy field modification) with its cable
+  stowageBox(b, [0.12, 0.28, 0.26], [X_REAR_LOW - 0.11, 1.32, 0.95]);
+  cable(b, [[X_REAR_LOW - 0.17, 1.2, 0.95], [X_REAR_LOW - 0.3, 1.05, 0.9], [X_REAR_LOW - 0.26, 0.92, 0.75], [X_REAR_LOW - 0.18, 1.1, 0.7]], 0.008, 'rubber');
+  // gun travel lock on the rear deck (A-frame and cradle)
+  for (const z of [-0.18, 0.18]) rod(b, [-2.5, Y_ROOF + 0.02, z], [-2.36, 2.34, z * 0.3], 0.02, 'paint');
+  b.box([0.1, 0.06, 0.22], [-2.36, 2.36, 0], 'paintDark');
+  // pioneer tools on the rear deck and hull rear
+  tool(b, 'shovel', [-2.05, Y_ROOF + 0.01, -1.0], 0);
+  tool(b, 'axe', [-1.1, Y_ROOF + 0.01, -1.05], Math.PI);
+  tool(b, 'pick', [-2.0, Y_ROOF + 0.01, 1.05], 0);
+  tool(b, 'sledge', [-1.15, Y_ROOF + 0.01, 1.0], Math.PI);
+  tool(b, 'crowbar', [-1.6, Y_ROOF + 0.01, 0.0], 0);
+  // tow cable coiled on the rear deck
+  const loop: [number, number, number][] = [];
+  for (let i = 0; i <= 16; i++) { const a = (i / 16) * Math.PI * 2; loop.push([-2.35 + Math.cos(a) * 0.22, Y_ROOF + 0.32 + i * 0.002, Math.sin(a) * 0.5]); }
+  cable(b, loop, 0.016);
+  // lifting eyes and glacis details
+  for (const z of [-1.1, 1.1]) {
+    const eye = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.014, 6, 12), b.mats.paint);
+    eye.position.copy(b.V([X_GLACIS_TOP + 0.08, Y_ROOF + 0.04, z]));
+    eye.rotation.y = Math.PI / 2;
+    b.add(eye);
+  }
+  bolts(b, [[2.75, 0.92, -0.75], [2.75, 0.92, -0.25], [2.75, 0.92, 0.25], [2.75, 0.92, 0.75]], [1, 0.1, 0], 0.018);
+  // sponson rail clips
+  for (const s of [-1, 1]) for (let x = -2.3; x < 2.4; x += 0.9) b.box([0.04, 0.05, 0.06], [x, Y_SPONSON + 0.02, s * (Z_SIDE + 0.03)], 'paintDark');
+  // VVSS volute springs (helical coils) and skid gussets on every bogie
+  for (const side of [-1, 1]) {
+    for (const bx of BOGIES) {
+      coil(b, [bx, 0.42, side * (Z_LOW + 0.24)], 0.065, 0.2, 5, 0.014, 'darkSteel');
+      b.box([0.36, 0.03, 0.14], [bx, 0.65, side * (Z_LOW + 0.23)], 'paintDark');
+    }
+  }
+  b.setFrame('turret');
+  // pistol port, M3 2-inch smoke mortar, .50 ammo box, aerial on the bustle
+  b.cyl(0.08, 0.08, 0.05, [TURRET_X - 0.35, 2.3, -1.06], 'z', 'paintDark', 14);
+  b.cyl(0.04, 0.04, 0.22, [TURRET_X + 0.25, 2.82, -0.62], 'y', 'darkSteel', 10);
+  stowageBox(b, [0.28, 0.18, 0.12], [CUP[0] + 0.05, 3.06, 0.78], 'paintDark');
+  antenna(b, [TURRET_X - 0.85, 2.62, 0.62], 2.6, [-0.35, 1, 0.08]);
+  for (const [x, z] of [[TURRET_X + 0.3, -0.7], [TURRET_X + 0.3, 0.7]] as [number, number][]) handle(b, [x - 0.15, 2.55, z * 1.05], [x + 0.15, 2.55, z * 1.05], [0, 0, Math.sign(z)], 0.05);
+  b.setFrame('gun');
+  bolts(b, [[GS[1] + 0.002, GUN_Y + 0.11, -0.16], [GS[1] + 0.002, GUN_Y + 0.11, 0.2], [GS[1] + 0.002, GUN_Y - 0.11, -0.16], [GS[1] + 0.002, GUN_Y - 0.11, 0.2]], [1, 0, 0], 0.016);
+  b.setFrame('hull');
 
   /* ================================================================ INTERIOR */
   b.crew('driver', 'Driver', [1.3, 0.72, -0.5]);

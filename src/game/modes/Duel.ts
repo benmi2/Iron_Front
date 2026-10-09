@@ -4,6 +4,7 @@ import type { Profile } from '../../progression/Profile';
 import { ensureVehicle } from '../../progression/Profile';
 import type { Team } from '../../world/Team';
 import { buildBackground } from '../../world/Background';
+import { buildForeground } from '../../world/Foreground';
 import { addHedgerow, addHouse, addStoneWall, addTree, addWreckTruck } from '../../world/Props';
 import { RNG } from '../../core/rng';
 import type { TimeOfDay, Weather } from '../Atmosphere';
@@ -53,7 +54,8 @@ export class DuelMode implements Mode {
   setup(s: Session) {
     const w = s.world;
     const r = new RNG(5);
-    buildBackground(w, 3, 0, 1700, { churchX: 900, bridgeX: 500, burning: [700, 1300] });
+    buildBackground(w, 3, 0, 1700, { churchX: 900, bridgeX: 500, burning: [700, 1300], ruins: [420, 980, 1450], windmills: [300, 1250] });
+    buildForeground(w, 0, 1700, 17);
     addHedgerow(w, -40, -18.5, 1750, -18.5, 1);
     for (let i = 0; i < 9; i++) addStoneWall(w, 150 + i * 160, 150 + i * 160 + r.range(14, 30), r.pick([-11, -6, 2.5]), r.range(1.1, 1.5), i);
     addHouse(w, { x: 840, z: -14.5, w: 11, d: 7, floors: 1, style: 'stone', seed: 9, damage: 0.7 });

@@ -27,6 +27,8 @@ interface Emitter {
   time: number;
   life: number;
   acc: number;
+  /** smoke multiplier for fires (a burning building's column already carries the smoke) */
+  smoke?: number;
 }
 
 const DEBRIS_MAX = 600;
@@ -342,20 +344,28 @@ export class Effects {
       const fadeOut = clamp((e.life - e.time) / 8, 0, 1);
       const I = e.intensity * fadeOut;
       e.acc += dt * 60;
+      // scenery fires far outside any possible view only keep time (saves the particle budget)
+      if (!e.follow && Math.abs(e.pos.x - this.cameraPos.x) > 650 && this.cameraPos.lengthSq() > 0) e.acc = 0;
       while (e.acc >= 1) {
         e.acc -= 1;
         if (e.kind === 'fire') {
           if (r.chance(0.8)) this.particles.fire.spawn({ pos: e.pos.clone().add(new THREE.Vector3(r.normal(0, 0.35 * I), r.range(0, 0.3), r.normal(0, 0.35 * I))), vel: new THREE.Vector3(r.normal(0, 0.4), r.range(1.5, 3.5) * I, r.normal(0, 0.4)), life: r.range(0.35, 0.8), size: r.range(0.5, 1.1) * I, grow: -0.3, color: r.chance(0.5) ? 0xff9a3a : 0xff6a1a, shape: 0, alpha: 0.9 });
-          if (r.chance(0.5)) this.particles.smoke.spawn({ pos: e.pos.clone().add(new THREE.Vector3(r.normal(0, 0.3), 0.8 * I, r.normal(0, 0.3))), vel: new THREE.Vector3(r.normal(0, 0.3), r.range(2, 4) * I, r.normal(0, 0.3)), life: r.range(5, 10), size: r.range(0.8, 1.4) * I, grow: r.range(0.7, 1.3), color: new THREE.Color().setScalar(r.range(0.06, 0.16)), alpha: 0.7, drag: 0.3, rise: 0.25 });
+          if (r.chance(0.5 * (e.smoke ?? 1))) this.particles.smoke.spawn({ pos: e.pos.clone().add(new THREE.Vector3(r.normal(0, 0.3), 0.8 * I, r.normal(0, 0.3))), vel: new THREE.Vector3(r.normal(0, 0.3), r.range(2, 4) * I, r.normal(0, 0.3)), life: r.range(5, 10), size: r.range(0.8, 1.4) * I, grow: r.range(0.7, 1.3), color: new THREE.Color().setScalar(r.range(0.06, 0.16)), alpha: 0.7, drag: 0.3, rise: 0.25 });
           if (r.chance(0.04)) this.light(e.pos, 0xff8030, 20 * I, 3, 16);
         } else if (e.kind === 'smoke') {
           if (r.chance(0.5)) this.particles.smoke.spawn({ pos: e.pos.clone().add(new THREE.Vector3(r.normal(0, 2.5 * I), r.range(0, 1.5), r.normal(0, 2.5 * I))), vel: new THREE.Vector3(r.normal(0, 0.4), r.range(0.2, 0.7), r.normal(0, 0.4)), life: r.range(6, 10), size: r.range(2.5, 4) * I, grow: 0.5, color: new THREE.Color().setScalar(r.range(0.78, 0.9)), alpha: 0.75 * Math.max(0.2, fadeOut), drag: 0.6, rise: 0.08 });
         } else if (e.kind === 'smolder') {
           if (r.chance(0.18)) this.particles.smoke.spawn({ pos: e.pos.clone().add(new THREE.Vector3(r.normal(0, 0.4), 0, r.normal(0, 0.4))), vel: new THREE.Vector3(r.normal(0, 0.2), r.range(0.8, 1.8), r.normal(0, 0.2)), life: r.range(5, 9), size: 0.8 * I, grow: 0.9, color: new THREE.Color().setScalar(r.range(0.2, 0.32)), alpha: 0.5, drag: 0.3, rise: 0.2 });
         } else if (e.kind === 'column') {
-          // distant burning town: tall black columns (slow, big)
-          if (r.chance(0.35)) this.particles.smoke.spawn({ pos: e.pos.clone().add(new THREE.Vector3(r.normal(0, 3), 0, r.normal(0, 3))), vel: new THREE.Vector3(r.normal(0.5, 0.5), r.range(4, 7), r.normal(0, 0.5)), life: r.range(14, 22), size: r.range(5, 8) * I, grow: r.range(1.5, 2.5) * I, color: new THREE.Color().setScalar(r.range(0.1, 0.22)), alpha: 0.65, drag: 0.15, rise: 0.1 });
-          if (r.chance(0.3)) this.particles.fire.spawn({ pos: e.pos.clone().add(new THREE.Vector3(r.normal(0, 3), r.range(0, 2), r.normal(0, 3))), vel: new THREE.Vector3(0, r.range(2, 5), 0), life: r.range(0.5, 1), size: r.range(2, 4) * I, color: 0xff7a20, alpha: 0.8 });
+          // burning buildings: dense black oil-and-timber smoke climbing high and leaning downwind,
+          // glowing orange at the base, sparks rising with it
+          if (r.chance(0.2)) {
+            const base = r.chance(0.25);
+            const c = base ? new THREE.Color(0.32, 0.16, 0.07).multiplyScalar(r.range(0.7, 1.1)) : new THREE.Color().setScalar(r.range(0.035, 0.11)).multiply(new THREE.Color(1, 0.94, 0.88));
+            this.particles.smoke.spawn({ pos: e.pos.clone().add(new THREE.Vector3(r.normal(0, 1.6), r.range(0, 1.5), r.normal(0, 1.6))), vel: new THREE.Vector3(r.normal(1.4, 0.4), r.range(5.5, 8.5), r.normal(0, 0.4)), life: r.range(16, 22), size: r.range(4.5, 6.5) * I, grow: r.range(2.8, 4) * I, color: c, alpha: 0.88, drag: 0.08, rise: 0.12 });
+          }
+          if (r.chance(0.3)) this.particles.fire.spawn({ pos: e.pos.clone().add(new THREE.Vector3(r.normal(0, 1.8), r.range(-1, 1), r.normal(0, 1.8))), vel: new THREE.Vector3(r.normal(0, 0.5), r.range(2, 5), 0), life: r.range(0.5, 1.1), size: r.range(2, 3.6) * I, grow: -0.4, color: r.chance(0.5) ? 0xff8a2a : 0xff5a14, alpha: 0.85 });
+          if (r.chance(0.35)) this.particles.glow.spawn({ pos: e.pos.clone().add(new THREE.Vector3(r.normal(0, 2), r.range(0, 2), r.normal(0, 2))), vel: new THREE.Vector3(r.normal(1, 1.2), r.range(3, 8), r.normal(0, 1)), life: r.range(1.5, 3.5), size: r.range(0.12, 0.25), color: 0xffa040, shape: 1, drag: 0.4 });
         }
       }
     }

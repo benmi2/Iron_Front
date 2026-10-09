@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RNG } from '../core/rng';
 import { barkTexture, foliageTexture, plasterTexture, roofTileTexture, sandbagTexture, signTexture, stoneTexture, wallLetteringTexture, woodTexture, craterTexture } from '../render/Textures';
 import { Obstacle } from './Obstacle';
+import { mergeByMaterial } from '../render/Merge';
 import type { World } from './World';
 
 /**
@@ -340,13 +341,14 @@ export function addHedgerow(w: World, ax: number, az: number, bx: number, bz: nu
       p.rotation.y += r.range(-0.25, 0.25);
       g.add(p);
     }
-    if (r.chance(0.22)) {
-      const tr = tree(r.int(0, 9999), r.chance(0.5) ? 'round' : 'poplar');
+    if (r.chance(0.14)) {
+      const tr = tree(r.int(0, 9999), r.chance(0.25) ? 'poplar' : 'round');
       tr.position.set(alongX ? r.range(-seg / 3, seg / 3) : 0, 0.6, alongX ? 0 : r.range(-seg / 3, seg / 3));
       g.add(tr);
     }
     g.position.set(cx, gy, cz);
     shadow(g, true, true);
+    mergeByMaterial(g);
     w.root.add(g);
     const hx = alongX ? seg / 2 : 1.15, hz = alongX ? 1.15 : seg / 2;
     const o = new Obstacle({ kind: 'hedge', cx, cz, hx, hz, y0: gy, y1: gy + 4.2, blocksTanks: true, blocksFoot: true, blocksLOS: true, stopsBullets: true, shellMm: 80, hp: 9000, solidity: 1, label: 'bocage hedgerow' });

@@ -1,0 +1,17 @@
+app.startCampaign();
+await sleep(2500);
+const s = app.session, r = s.renderer, w = s.world;
+s.paused = true;
+await sleep(500);
+const gl = r.renderer;
+gl.info.autoReset = false;
+gl.info.reset();
+await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+gl.info.reset();
+await new Promise(res => requestAnimationFrame(res));
+const out = { calls: gl.info.render.calls, tris: gl.info.render.triangles };
+gl.info.autoReset = true;
+let meshes = 0, casters = 0;
+w.root.traverse(o => { if (o.isMesh) { meshes++; if (o.castShadow) casters++; } });
+out.meshes = meshes; out.casters = casters;
+return out;

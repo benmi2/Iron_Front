@@ -3,6 +3,7 @@ import { RNG } from '../../core/rng';
 import type { TerrainDef } from '../Terrain';
 import type { World } from '../World';
 import { buildBackground } from '../Background';
+import { buildForeground } from '../Foreground';
 import { craterTexture } from '../../render/Textures';
 import {
   addCrates, addFence, addHedgehog, addHedgerow, addHouse, addLamp, addRoadSign, addSandbags, addStoneWall, addTelegraphPoles, addTree, addWire, addWreckTruck,
@@ -48,7 +49,8 @@ export function populateNormandy(w: World): MapLayout {
   const r = new RNG(77);
   const BAND_BACK = -16.8;
 
-  buildBackground(w, 9, NORMANDY.x0, NORMANDY.x1, { churchX: 620, bridgeX: 380, burning: [470, 760, 1010, 240] });
+  buildBackground(w, 9, NORMANDY.x0, NORMANDY.x1, { churchX: 620, bridgeX: 380, burning: [470, 760, 1010, 240], ruins: [44, 330, 545, 790, 1060], windmills: [150, 860] });
+  buildForeground(w, NORMANDY.x0, NORMANDY.x1, 31);
 
   // ---- hedgerows framing the band (back edge) and the far side of the fields
   addHedgerow(w, -40, BAND_BACK - 1.5, 300, BAND_BACK - 1.5, 3);

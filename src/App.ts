@@ -41,8 +41,7 @@ export class App {
   applySettings() {
     const s = this.profile.settings;
     this.audio.setVolume(s.volume);
-    this.renderer.bloom.enabled = s.quality === 'high';
-    this.renderer.sun.shadow.mapSize.set(s.quality === 'high' ? 4096 : 2048, s.quality === 'high' ? 2048 : 1024);
+    this.renderer.setQuality(s.quality);
   }
 
   resetProfile() {

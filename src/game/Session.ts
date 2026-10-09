@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { DEPTH_MAX, DEPTH_MIN } from '../world/Terrain';
 import type { Input } from '../core/Input';
 import { RNG } from '../core/rng';
 import { Effects } from '../render/Effects';
@@ -100,6 +101,9 @@ export class Session {
     this.hud.build();
     // warm up: paint the effect textures and compile every shader variant before play starts
     const p = this.player?.unit.pos ?? new THREE.Vector3();
+    // the fires have been burning for a while: let the smoke columns climb before the first frame
+    this.effects.cameraPos.set(p.x, 10, 40);
+    for (let i = 0; i < 1100; i++) this.effects.update(1 / 60, renderer.scene.fog as THREE.FogExp2);
     this.effects.explosion(new THREE.Vector3(p.x, -50, p.z), 0.5, true, -50, true);
     this.effects.armorSpark(new THREE.Vector3(p.x, -50, p.z), new THREE.Vector3(0, 1, 0), null);
     renderer.renderer.compile(renderer.scene, renderer.camera);
@@ -366,8 +370,13 @@ export class Session {
     w.listener.copy(this.audio.listener);
     w.centerX = unit.pos.x;
     this.audio.update(dt);
+    // pulled back, the camera looks through more air for the same picture: thin the haze with zoom
+    // so distant targets stay readable
+    (this.renderer.scene.fog as THREE.FogExp2).density = this.renderer.baseFogDensity / Math.pow(Math.max(1, this.cam.effectiveZoom), 0.85);
     this.effects.update(dt, this.renderer.scene.fog as THREE.FogExp2);
     this.renderer.followShadow(this.cam.focus.clone().setX(this.cam.focus.x + this.cam.lookAhead * 0.6), this.cam.viewWidth);
+    // depth of field: the playing band (plus the hedgerows and village just behind it) stays sharp
+    this.renderer.setFocusBand(this.cam.focus.x + this.cam.lookAhead, this.cam.focus.y, DEPTH_MAX + 1.5, DEPTH_MIN - 45);
     // fog of war: hide enemies nobody on our side has spotted
     for (const t of w.tanks) t.root.visible = this.visibleToPlayer(t);
     for (const s of w.soldiers) s.rig.group.visible = !s.inTank && this.visibleToPlayer(s);

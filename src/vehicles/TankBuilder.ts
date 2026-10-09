@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { convexHull2D } from '../core/math';
 import { ArmorSet, flatPlate, loftShell, type ArmorGroup, type ArmorRegion, type ArmorRegionOptions, type V3 } from '../ballistics/ArmorMesh';
-import { paintMaterial, type PaintScheme } from './TankMaterials';
+import { paintMaterial, type PaintScheme, type RootUniform } from './TankMaterials';
 import type { CrewRole } from '../data/vehicles';
 
 /**
@@ -96,6 +96,8 @@ export interface TankModel {
   halfLength: number;
   halfWidth: number;
   height: number;
+  /** inverse root world matrix used by the weathering shaders */
+  rootInv: RootUniform;
   /** materials owned by this instance (for burn tint / dispose) */
   materials: THREE.Material[];
   /** coax / bow MG muzzles */
@@ -125,6 +127,8 @@ export class TankBuilder {
   coax = new THREE.Vector3();
   bow: THREE.Vector3 | null = null;
   commanderHatch = new THREE.Vector3();
+  /** inverse root matrix shared by the weathering shaders (updated by Tank every frame) */
+  readonly rootInv: RootUniform = { value: new THREE.Matrix4() };
 
   constructor(readonly turretPivot: THREE.Vector3, readonly trunnion: THREE.Vector3, readonly scheme: PaintScheme) {
     const { hull, turret, gun } = this.groups;
@@ -141,11 +145,15 @@ export class TankBuilder {
     const mk = (key: string, color: number, rough = 0.8, metal = 0.1) => {
       this.mats[key] = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
     };
-    this.mats.paint = paintMaterial(scheme, { key: 'p' });
-    this.mats.paintDark = paintMaterial(scheme, { dark: 0.72, key: 'pd' });
+    const rootInv = this.rootInv;
+    this.mats.paint = paintMaterial(scheme, { key: 'p', rootInv });
+    this.mats.paintDark = paintMaterial(scheme, { dark: 0.72, key: 'pd', rootInv });
     this.armorMats.RHA = this.mats.paint;
-    this.armorMats.CHA = paintMaterial(scheme, { cast: true, rough: 0.86, key: 'c' });
+    this.armorMats.CHA = paintMaterial(scheme, { cast: true, rough: 0.86, key: 'c', rootInv });
     this.armorMats.MILD = this.mats.paint;
+    this.armorMats.SAND = this.mats.paint;
+    this.armorMats.EDGE = paintMaterial(scheme, { rough: 0.55, metal: 0.3, key: 'edge', rootInv, edge: true });
+    this.armorMats.WELD = paintMaterial(scheme, { dark: 0.62, rough: 0.95, key: 'weld', rootInv });
     mk('steel', 0x6c7074, 0.55, 0.45);
     mk('darkSteel', 0x3a3c3e, 0.62, 0.45);
     mk('rubber', 0x1d1e1f, 0.95, 0.0);
@@ -156,7 +164,8 @@ export class TankBuilder {
     mk('canvas', 0x5d5a44, 1.0, 0.0);
     mk('rust', 0x5a3a26, 0.95, 0.2);
     mk('muffler', 0x4a3524, 0.9, 0.35);
-    this.mats.wheelPaint = paintMaterial({ ...scheme, mud: Math.min(1, (scheme.mud ?? 0.6) * 1.5) }, { key: 'w' });
+    this.mats.wheelPaint = paintMaterial({ ...scheme, mud: Math.min(1, (scheme.mud ?? 0.6) * 1.5) }, { key: 'w', rootInv });
+    this.armorMats.TRACK = this.mats.track;
   }
 
   /* ------------------------------------------------------------------ frames */
@@ -417,7 +426,11 @@ export class TankBuilder {
     const guideGeo = new THREE.BoxGeometry(step * 0.45, thickness * 1.7, width * 0.1);
     const guides = new THREE.InstancedMesh(guideGeo, this.mats.track, n);
     const extras: THREE.InstancedMesh[] = [guides];
-    if (style === 'chevron') extras.push(new THREE.InstancedMesh(new THREE.BoxGeometry(step * 0.55, thickness * 0.55, width * 0.42), this.mats.rubber, n * 2));
+    if (style === 'chevron') {
+      extras.push(new THREE.InstancedMesh(new THREE.BoxGeometry(step * 0.55, thickness * 0.55, width * 0.42), this.mats.rubber, n * 2));
+      // steel end connectors joining the links at both edges of the track
+      extras.push(new THREE.InstancedMesh(new THREE.BoxGeometry(step * 0.28, thickness * 1.25, width * 0.09), this.mats.darkSteel, n * 2));
+    }
     else if (style === 'cleat') extras.push(new THREE.InstancedMesh(new THREE.BoxGeometry(step * 0.22, thickness * 0.6, width * 0.92), this.mats.track, n));
     const o = this.offset();
     const g = new THREE.Group();
@@ -544,6 +557,8 @@ export class TankBuilder {
       bakeStatic(g);
     }
     bakeStatic(this.barrelGroup);
+    // each road wheel / sprocket turns as one piece: merge its parts per material
+    for (const wh of this.wheels) bakeStatic(wh.obj);
     const materials: THREE.Material[] = [];
     this.root.traverse((ob) => {
       const m = ob as THREE.Mesh;
@@ -559,7 +574,7 @@ export class TankBuilder {
       armor: this.armor, turretPivot: this.turretPivot.clone(), trunnion: this.trunnion.clone(), muzzle: this.muzzle.clone(),
       components: this.components, external: this.external, tracks: this.tracks, wheels: this.wheels, exhausts: this.exhausts,
       commanderHatch: this.commanderHatch.clone(), halfLength: o.halfLength, halfWidth: o.halfWidth, height: o.height, materials,
-      coax: this.coax.clone(), bow: this.bow?.clone() ?? null, hatches: this.hatches,
+      coax: this.coax.clone(), bow: this.bow?.clone() ?? null, hatches: this.hatches, rootInv: this.rootInv,
     };
   }
 }
@@ -602,6 +617,12 @@ export function layoutTrack(run: TrackRun) {
           const bq = q.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), side * 0.35));
           const bp = new THREE.Vector3(x, y, run.z + side * run.width * 0.24).addScaledVector(out, run.thickness * 0.5);
           run.extras[1].setMatrixAt(k * 2 + (side > 0 ? 1 : 0), m.compose(bp, bq, s));
+          if (run.extras[2]) {
+            const cp = new THREE.Vector3(x, y, run.z + side * run.width * 0.52).addScaledVector(out, run.thickness * 0.2);
+            const ang2 = ang + run.pitch * 0.5 / Math.max(0.1, run.total) * 0;
+            void ang2;
+            run.extras[2].setMatrixAt(k * 2 + (side > 0 ? 1 : 0), m.compose(cp, q, s));
+          }
         }
       } else {
         run.extras[1].setMatrixAt(k, m.compose(p.clone().addScaledVector(out, run.thickness * 0.5), q, s));
@@ -612,22 +633,66 @@ export function layoutTrack(run: TrackRun) {
   for (const e of run.extras) e.instanceMatrix.needsUpdate = true;
 }
 
-/** Visible outer armour surfaces: one mesh per material, smooth normals for cast regions. */
+/**
+ * Visible armour: outer surfaces (smooth normals for cast regions), the plate EDGES (the steel
+ * thickness where a plate ends — what makes a welded hull read as heavy plate instead of paper)
+ * and weld beads along the edges of flat rolled plates.
+ */
 function armorSurfaceMeshes(set: ArmorSet, mats: Record<string, THREE.MeshStandardMaterial>) {
   const buckets = new Map<THREE.Material, { pos: number[]; nor: number[] }>();
+  const push = (mat: THREE.Material, vs: THREE.Vector3[], ns: THREE.Vector3[]) => {
+    let b = buckets.get(mat);
+    if (!b) buckets.set(mat, (b = { pos: [], nor: [] }));
+    for (let i = 0; i < vs.length; i++) {
+      b.pos.push(vs[i].x, vs[i].y, vs[i].z);
+      b.nor.push(ns[i].x, ns[i].y, ns[i].z);
+    }
+  };
+  const welds: THREE.BufferGeometry[] = [];
+  const key = (v: THREE.Vector3) => `${Math.round(v.x * 2000)},${Math.round(v.y * 2000)},${Math.round(v.z * 2000)}`;
   for (const r of set.regions) {
     if (r.auxiliary && r.group === 'running') continue;
     const mat = mats[r.material.id] ?? mats.RHA;
-    let b = buckets.get(mat);
-    if (!b) buckets.set(mat, (b = { pos: [], nor: [] }));
     const smooth = r.material.id === 'CHA';
+    const edges = new Map<string, { a: THREE.Vector3; b: THREE.Vector3; ia: THREE.Vector3; ib: THREE.Vector3; o: THREE.Vector3; n: THREE.Vector3; count: number }>();
     for (const f of r.facets) {
-      const ns = smooth ? [f.na, f.nb, f.nc] : [f.n, f.n, f.n];
-      [f.a, f.b, f.c].forEach((v, i) => {
-        b!.pos.push(v.x, v.y, v.z);
-        b!.nor.push(ns[i].x, ns[i].y, ns[i].z);
-      });
-      // plate edges: close thin rims so free plate edges are not paper-thin
+      push(mat, [f.a, f.b, f.c], smooth ? [f.na, f.nb, f.nc] : [f.n, f.n, f.n]);
+      const tri: [THREE.Vector3, THREE.Vector3][] = [[f.a, f.ia], [f.b, f.ib], [f.c, f.ic]];
+      for (let k = 0; k < 3; k++) {
+        const p = tri[k], q = tri[(k + 1) % 3];
+        const ka = key(p[0]), kb = key(q[0]);
+        const ek = ka < kb ? ka + '|' + kb : kb + '|' + ka;
+        const e = edges.get(ek);
+        if (e) e.count++;
+        else edges.set(ek, { a: p[0], b: q[0], ia: p[1], ib: q[1], o: tri[(k + 2) % 3][0], n: f.n, count: 1 });
+      }
+    }
+    const edgeMat = mats.EDGE ?? mat;
+    for (const e of edges.values()) {
+      if (e.count !== 1) continue;
+      // the strip of steel between the outer and inner surface along a free plate edge
+      const n = new THREE.Vector3().subVectors(e.b, e.a).cross(new THREE.Vector3().subVectors(e.ia, e.a));
+      if (n.lengthSq() < 1e-12) continue;
+      n.normalize();
+      const mid = e.a.clone().add(e.b).multiplyScalar(0.5);
+      if (n.dot(mid.clone().sub(e.o)) < 0) n.negate();
+      const tri1 = [e.a, e.b, e.ib], tri2 = [e.a, e.ib, e.ia];
+      const t1n = new THREE.Vector3().subVectors(tri1[1], tri1[0]).cross(new THREE.Vector3().subVectors(tri1[2], tri1[0]));
+      if (t1n.dot(n) < 0) { tri1.reverse(); tri2.reverse(); }
+      push(edgeMat, tri1, [n, n, n]);
+      push(edgeMat, tri2, [n, n, n]);
+      // weld bead along the outer edge of rolled plates (not castings, not thin skirts)
+      if (!smooth && r.group !== 'skirt' && r.nominalMm >= 10) {
+        const len = e.a.distanceTo(e.b);
+        if (len > 0.08) {
+          const g = new THREE.CylinderGeometry(0.009, 0.009, len, 5, 1);
+          const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), e.b.clone().sub(e.a).normalize());
+          g.applyQuaternion(q);
+          const c = mid.clone().addScaledVector(e.n, 0.002);
+          g.translate(c.x, c.y, c.z);
+          welds.push(g.toNonIndexed());
+        }
+      }
     }
   }
   const out: THREE.Mesh[] = [];
@@ -638,6 +703,22 @@ function armorSurfaceMeshes(set: ArmorSet, mats: Record<string, THREE.MeshStanda
     const mesh = new THREE.Mesh(g, mat);
     mesh.name = 'armor-surface';
     mesh.castShadow = mesh.receiveShadow = true;
+    out.push(mesh);
+  }
+  if (welds.length && mats.WELD) {
+    const pos: number[] = [], nor: number[] = [];
+    for (const g of welds) {
+      const p = g.getAttribute('position'), n = g.getAttribute('normal');
+      for (let i = 0; i < p.count; i++) { pos.push(p.getX(i), p.getY(i), p.getZ(i)); nor.push(n.getX(i), n.getY(i), n.getZ(i)); }
+      g.dispose();
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    const mesh = new THREE.Mesh(g, mats.WELD);
+    mesh.name = 'armor-surface';
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     out.push(mesh);
   }
   return out;

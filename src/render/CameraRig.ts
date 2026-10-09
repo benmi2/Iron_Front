@@ -34,9 +34,9 @@ export class CameraRig {
     const tx = this.focus.x + this.lookAheadCur;
     // frame the playable depth band: keep the focus depth partly, bias to the band centre
     const tz = this.focus.z * 0.55 - 3.5;
-    // low eye, shallow pitch: the horizon sits about a third of the way down the frame
-    const target = new THREE.Vector3(tx, this.focus.y + 1.6 + dist * 0.06, tz);
-    const pos = new THREE.Vector3(tx, this.focus.y + 2.6 + dist * 0.15, tz + dist);
+    // low eye, shallow pitch: the horizon sits about a third of the way down the frame, sky above
+    const target = new THREE.Vector3(tx, this.focus.y + 2.0 + dist * 0.05, tz);
+    const pos = new THREE.Vector3(tx, this.focus.y + 2.2 + dist * 0.125, tz + dist);
     if (!this.initialized) {
       this.cur.copy(pos);
       this.lookCur.copy(target);
@@ -50,6 +50,11 @@ export class CameraRig {
     const off = new THREE.Vector3(Math.sin(this.shakeT * 53) * s, Math.sin(this.shakeT * 47 + 1) * s, 0);
     this.cam.position.copy(this.cur).add(off);
     this.cam.lookAt(this.lookCur.clone().add(off.multiplyScalar(0.5)));
+  }
+
+  /** current distance multiplier (zoom and binocular pull-back) */
+  get effectiveZoom() {
+    return this.zoomCur * (1 + this.scopeCur * 1.6);
   }
 
   setZoomStep(dir: number) {

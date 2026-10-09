@@ -15,10 +15,13 @@ src/
   infantry/    rig/ (Dead Meridian skeleton + gait port, SoldierPainter, WeaponArt, SoldierRig),
                Soldier, Bullets (small arms + grenades)
   ai/          Perception (spotting), TankAI, SoldierAI, Squad, Tactics, Paths
-  world/       Terrain (heightfield, surfaces, depth band), Obstacle, Props, Background,
+  world/       Terrain (heightfield, surfaces, depth band, mud road + puddles), Obstacle,
+               Props, Background (tree rows, far village, burning ruins, windmills),
+               Foreground (visual-only dressing in front of the band, grass + poppies),
                World (registry, collisions, LOS, explosions, smoke), maps/Normandy
-  render/      Renderer (lights, fog, sky, bloom + grade), CameraRig, Paint/Textures
-               (procedural canvas art), Particles, Effects
+  render/      Renderer (sky, key / rim / hemisphere lights, sky environment map, MSAA scene
+               pass with depth of field, bloom, grade), CameraRig, Paint/Textures
+               (procedural canvas art), Particles, Effects, Merge (draw-call merging)
   audio/       Audio (procedural WebAudio)
   game/        Session (one battle), PlayerController, Picking, Objectives, Atmosphere, modes/
   progression/ Profile (rank, research, purchases, upgrades, crews, rewards, save)
@@ -50,6 +53,18 @@ Tank models use Ballistic Lab's frame: +X front, +Y up, +Z right, ground at 0. T
 5. Mode logic
 
 Rendering is decoupled and runs once per animation frame.
+
+## Render pipeline
+
+1. **Scene pass** (`SceneDofPass`): the battlefield renders into a 4× multisampled half-float target with a depth texture.
+2. **Depth of field**: two separable gather passes. The circle of confusion is zero inside the playable band, from just in front of it to 45 m behind it (`Renderer.setFocusBand`, set every frame by the session). It grows in front of the band (foreground dressing) and far behind it (horizon). A sample nearer than the pixel spreads by its own blur radius, so blurred foreground overlaps what is behind it.
+3. **Bloom** (threshold above 1.35 linear: sun disc, fire, muzzle flashes), **OutputPass** (ACES tone mapping, sRGB), then a **grade** pass (saturation, S-curve, teal-shadow / amber-highlight split toning, vignette, grain, hit flash).
+
+The sky is a shader dome. Its vertical axis is stretched ×2.1 because the low side-view camera only sees about 12° of sky; the sun disc keeps its true direction. The environment map is baked from the same sky, unstretched and with the disc dimmed, through `PMREMGenerator` each time the atmosphere changes. That gives sky reflections on paint, metal and puddles.
+
+Lights are a fixed set so shaders never recompile mid-battle: hemisphere, key (shadow-casting, from the viewer's left), rim (from the visible sun), and the effects' pooled point lights. Static scenery is merged per material in 80–120 m chunks (`render/Merge.ts`), so frustum culling still works. Road wheels are merged per wheel.
+
+Tank paint (`TankMaterials`) is weathered in the shader in object space: mottling, camouflage, dust on upward faces, paint chips, sun fading and Zimmerit ridges. The mud line uses the hull height, taken from the vehicle's inverse root matrix, which every paint material shares.
 
 ## Shell → damage pipeline
 

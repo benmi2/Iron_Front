@@ -26,7 +26,7 @@ export interface ParticleOpts {
   stretch?: number;
 }
 
-const MAX = 6000;
+const MAX = 9000;
 
 class Pool {
   readonly mesh: THREE.Mesh;

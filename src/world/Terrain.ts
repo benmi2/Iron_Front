@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clamp, smoothstep } from '../core/math';
 import { Noise2 } from '../render/Paint';
-import { dirtTexture, grassTexture, mudTexture, roadTexture } from '../render/Textures';
+import { dirtTexture, grassTexture, mudTexture, mudRoadTexture } from '../render/Textures';
 
 /**
  * World frame: X = along the battlefield (east → right of screen), Y = up, Z = depth toward the
@@ -100,8 +100,10 @@ export class Terrain {
       if (r2 < 1) h += hl.h * (1 - r2) * (1 - r2);
     }
     // the far background climbs into hills, the river valley dips
-    const back = smoothstep(-40, -150, z);
-    h += back * (8 + 22 * this.n2.fbm(x / 160, z / 160, 4)) * smoothstep(-60, -110, z);
+    // (kept low so the sky stays open above the horizon, as in a side-on battle painting)
+    const back = smoothstep(-60, -140, z);
+    h += back * (1.5 + 5 * this.n2.fbm(x / 160, z / 160, 4));
+    h += smoothstep(-260, -520, z) * (6 + 16 * this.n2.fbm(x / 260 + 7, z / 260, 4));
     const rv = Math.exp(-(((z - d.farRiverZ) / 22) ** 2));
     h = h * (1 - rv) + -2.2 * rv;
     for (const c of this.craters) {
@@ -230,7 +232,33 @@ export class Terrain {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
-    const m = new THREE.MeshStandardMaterial({ map: roadTexture(), roughness: 0.92, transparent: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    const m = new THREE.MeshStandardMaterial({ map: mudRoadTexture(), roughness: 0.88, transparent: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    // puddles: standing water in the ruts and hollows mirrors the sky; the ruts themselves are wet
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vRoad;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRoad = vec2(uv.x * 24.0, uv.y);');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+          varying vec2 vRoad;
+          float rH(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          float rN(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(rH(i), rH(i + vec2(1, 0)), f.x), mix(rH(i + vec2(0, 1)), rH(i + vec2(1, 1)), f.x), f.y); }
+          float rF(vec2 p){ return 0.55 * rN(p) + 0.3 * rN(p * 2.3 + 7.1) + 0.15 * rN(p * 5.1 + 3.3); }
+          float wPuddle = 0.0, wWet = 0.0;`)
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          float rv = vRoad.y;
+          float rut = exp(-pow((rv - 0.3) / 0.08, 2.0)) + exp(-pow((rv - 0.7) / 0.08, 2.0));
+          float pn = rF(vec2(vRoad.x * 0.16, rv * 2.6));
+          wPuddle = smoothstep(0.6, 0.63, pn + rut * 0.2 - 0.04);
+          wWet = clamp(max(wPuddle, rut * 0.75 * smoothstep(0.35, 0.55, pn)), 0.0, 1.0);
+          diffuseColor.rgb *= mix(1.0, 0.55, wWet);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.012, 0.013, 0.014), wPuddle * 0.9);`)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+          roughnessFactor = mix(roughnessFactor, 0.5, wWet * 0.8);
+          roughnessFactor = mix(roughnessFactor, 0.03, wPuddle);`);
+    };
+    m.customProgramCacheKey = () => 'mudroad';
     const mesh = new THREE.Mesh(g, m);
     mesh.receiveShadow = true;
     mesh.name = 'road';

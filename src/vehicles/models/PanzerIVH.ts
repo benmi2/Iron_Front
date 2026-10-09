@@ -4,6 +4,7 @@ import { RNG } from '../../core/rng';
 import { balkenkreuzTexture, numberTexture } from '../../render/Textures';
 import { SCHEME_GER_3TONE } from '../TankMaterials';
 import { TankBuilder, type TankModel } from '../TankBuilder';
+import { antenna, bolts, boltRow, cable, handle, hinge, rod, stowageBox, tool } from '../Details';
 
 /**
  * Panzerkampfwagen IV Ausf. H (late 1943 – 1944).
@@ -287,6 +288,56 @@ export function buildPanzerIVH(seed = 1, turretNumber = '312', upgrades: Set<str
     b.track(circles, side * Z_TRACK, TRACK_W, 0.12, 0.05, 'cleat', { x0: -1.45, x1: 1.45, y: 0.9, depth: 0.03 });
     b.externalPart(`Track & suspension (${side > 0 ? 'right' : 'left'})`, 'track', [0, 0.52, side * Z_TRACK], [5.4, 1.05, TRACK_W], 18, side);
   }
+
+  /* ================================================================ FINE DETAIL */
+  b.setFrame('hull');
+  // pioneer tools and fittings on the fenders (Ausf. H stowage)
+  tool(b, 'extinguisher', [1.15, Y_FENDER + 0.012, -1.33], 0);
+  tool(b, 'shovel', [0.15, Y_FENDER + 0.012, -1.35], Math.PI);
+  tool(b, 'cutters', [-0.75, Y_FENDER + 0.012, -1.33], 0);
+  tool(b, 'crowbar', [0.4, Y_FENDER + 0.012, 1.34], 0);
+  tool(b, 'axe', [-0.75, Y_FENDER + 0.012, 1.36], Math.PI);
+  tool(b, 'trackTool', [-1.7, Y_FENDER + 0.012, 1.34], 0);
+  tool(b, 'jack', [-2.2, Y_ROOF + 0.01, -0.75], Math.PI / 2);
+  // Notek blackout light and horn on the left fender
+  b.box([0.08, 0.06, 0.06], [2.32, Y_FENDER + 0.05, -1.25], 'darkSteel');
+  b.cyl(0.03, 0.045, 0.1, [2.1, Y_FENDER + 0.06, -1.15], 'x', 'darkSteel', 10);
+  // brake-hatch hinges and handles, engine-deck hatch hinges
+  const xm = (X_NOSE_TOP + X_GLACIS_TOP) / 2, ym = (Y_NOSE_TOP + Y_GLACIS_TOP) / 2;
+  for (const z of [-0.45, 0.45]) {
+    hinge(b, [X_GLACIS_TOP + 0.05, Y_GLACIS_TOP - 0.01, z - 0.25], [X_GLACIS_TOP + 0.05, Y_GLACIS_TOP - 0.01, z + 0.25], 0.02, 2);
+    handle(b, [xm + 0.12, ym - 0.02, z - 0.08], [xm + 0.12, ym - 0.02, z + 0.08], [0.31, 0.95, 0], 0.04);
+    hinge(b, [-1.28, Y_ROOF + 0.03, z - 0.3], [-1.28, Y_ROOF + 0.03, z + 0.3], 0.02, 2);
+    handle(b, [-2.1, Y_ROOF + 0.03, z - 0.08], [-2.1, Y_ROOF + 0.03, z + 0.08], [0, 1, 0], 0.04);
+  }
+  // bolts round the driver's visor and the nose plate track rack
+  bolts(b, [[2.21, 1.53, -0.73], [2.21, 1.53, -0.37], [2.24, 1.31, -0.73], [2.24, 1.31, -0.37]], [1, 0.17, 0], 0.016);
+  boltRow(b, [X_NOSE_TOP + 0.03, 0.96, -0.85], [X_NOSE_TOP + 0.03, 0.96, 0.85], 7, [0.97, 0.24, 0], 0.016);
+  // Fu 5 rod aerial on the right rear of the hull
+  antenna(b, [-1.65, Y_ROOF, 1.08], 2.0, [-0.18, 1, 0.05]);
+  // tow cable and jerrycans on the rear deck
+  cable(b, [[-2.6, Y_ROOF + 0.05, -0.9], [-2.0, Y_ROOF + 0.08, -0.95], [-1.4, Y_ROOF + 0.06, -0.9], [-1.4, Y_ROOF + 0.06, -0.35], [-2.0, Y_ROOF + 0.08, -0.3], [-2.6, Y_ROOF + 0.05, -0.35]], 0.015);
+  for (const z of [0.15, 0.4]) stowageBox(b, [0.16, 0.34, 0.24], [-2.62, Y_ROOF + 0.17, z], 'paintDark');
+  // fender support brackets
+  for (const s of [-1, 1]) for (const x of [2.0, 0.7, -0.6, -1.9]) rod(b, [x, Y_FENDER, s * Z_SUP], [x, Y_FENDER - 0.12, s * (Z_SUP + 0.2)], 0.012, 'paintDark');
+  b.setFrame('turret');
+  // side doors: hinges and handles; NbK 39 smoke dischargers (early Ausf. H); cupola hatch hinge
+  for (const s of [-1, 1]) {
+    hinge(b, [TURRET_X - 0.12, 2.16, s * 0.66], [TURRET_X - 0.12, 1.8, s * 0.72], 0.02, 2);
+    handle(b, [TURRET_X + 0.22, 2.02, s * 0.71], [TURRET_X + 0.22, 1.92, s * 0.73], [0.2, 0.4, s * 0.9], 0.04);
+    for (let i = 0; i < 3; i++) {
+      const z = s * (0.68 + i * 0.07);
+      rod(b, [TURRET_X + 0.75, 2.02, z], [TURRET_X + 0.92, 2.14, z * 1.05], 0.035, 'paintDark');
+    }
+    // hinged access doors in the turret Schürzen
+    b.box([0.4, 0.42, 0.012], [TURRET_X - 0.1, 2.03, s * 1.21], 'paintDark');
+    hinge(b, [TURRET_X + 0.1, 2.24, s * 1.215], [TURRET_X + 0.1, 1.82, s * 1.215], 0.016, 2);
+  }
+  hinge(b, [CUP[0] - 0.22, CUP[1] + 0.25, -0.1], [CUP[0] - 0.22, CUP[1] + 0.25, 0.1], 0.02, 1);
+  // stowage bin lid hinges and latches
+  hinge(b, [TURRET_X - 1.3, 2.3, -0.4], [TURRET_X - 1.3, 2.3, 0.4], 0.016, 3);
+  for (const z of [-0.3, 0.3]) b.box([0.02, 0.06, 0.04], [TURRET_X - 1.295, 2.18, z], 'darkSteel');
+  b.setFrame('hull');
 
   /* ================================================================ INTERIOR */
   b.crew('driver', 'Driver (Fahrer)', [1.6, 0.66, -0.5]);
