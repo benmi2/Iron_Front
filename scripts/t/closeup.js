@@ -1,0 +1,27 @@
+app.menus.garageVehicle = 'pz4h';
+app.profile.selected.GER = 'pz4h';
+app.menus.garage();
+await sleep(2500);
+await window.__shot('garage');
+document.querySelector('[data-armour]').click();
+await sleep(800);
+await window.__shot('garage_armour');
+app.startRange('m4a3_75w');
+await sleep(2500);
+const s = app.session;
+const t = s.player.tank;
+s.mode.cfg.distance = 45; s.mode.cfg.yaw = 60; s.mode.spawnTarget();
+const tg = s.mode.target;
+const cam = s.renderer.camera;
+const point = (p) => { const v = p.clone().project(cam); app.input.ndcX = v.x; app.input.ndcY = v.y; app.input.mouseX = (v.x*0.5+0.5)*innerWidth; app.input.mouseY = (-v.y*0.5+0.5)*innerHeight; };
+s.cam.zoom = 0.8;
+for (let i = 0; i < 120; i++) { point(tg.centerWorld()); await sleep(30); }
+await window.__shot('pz4');
+t.tryFire(s.world);
+await sleep(40);
+await window.__shot('fire1');
+await sleep(250);
+await window.__shot('fire2');
+await sleep(1500);
+await window.__shot('after');
+return s.world.reports.map(r => `${r.headline} ${r.effects.join(',')}`);

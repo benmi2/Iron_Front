@@ -1,0 +1,16 @@
+const errors = [];
+window.addEventListener('error', (e) => errors.push(e.message));
+const out = {};
+app.startSkirmish({ side: 'axis', playerTank: 'pz4h', friendlyTanks: 1, friendlyModel: 'pz4h', enemyTanks: 2, enemyModel: 'm4a3_75w', squads: 2, difficulty: 0.5, tod: 'dusk', weather: 'rain', ammo: 'limited' });
+await sleep(9000);
+await window.__shot('skirmish');
+out.skirmish = { fps: Math.round(app.fps), tanks: app.session.world.tanks.map(t => `${t.callsign}:${t.team}:${t.pos.x.toFixed(0)}`) };
+app.endBattle();
+await sleep(500);
+app.startDuel({ side: 'allies', playerTank: 'm4a3_75w', enemyModel: 'pz4h', count: 2, distance: 500, difficulty: 0.6, tod: 'morning', weather: 'mist' });
+await sleep(12000);
+await window.__shot('duel');
+out.duel = { fps: Math.round(app.fps), tanks: app.session.world.tanks.map(t => `${t.callsign}:${t.team}:${t.state}:${t.pos.x.toFixed(0)}`), log: [...document.querySelectorAll('.ll')].map(e => e.textContent).slice(0, 5) };
+app.endBattle();
+out.errors = errors;
+return out;

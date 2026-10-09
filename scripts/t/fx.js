@@ -1,0 +1,12 @@
+app.startRange('m4a3_75w');
+await sleep(2000);
+const s = app.session;
+const P = s.effects.particles;
+const before = [P.smoke.count, P.fire.count, P.glow.count];
+const p = s.player.tank.pos.clone(); p.x += 14; p.y = s.world.terrain.height(p.x, p.z);
+s.world.explode(p, 0.68, null, true);
+const after = [P.smoke.count, P.fire.count, P.glow.count];
+await sleep(300);
+const later = [P.smoke.count, P.fire.count, P.glow.count, P.smoke.mesh.geometry.instanceCount, P.smoke.mesh.visible, P.smoke.mesh.parent && P.smoke.mesh.parent.parent && P.smoke.mesh.parent.parent.name];
+await window.__shot('x');
+return { before, after, later };

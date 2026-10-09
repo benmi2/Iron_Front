@@ -1,0 +1,23 @@
+app.startCampaign();
+await sleep(2500);
+const s = app.session;
+const w = s.world;
+const dx = 260;
+for (const t of w.tanks) if (t.team === 'allies') t.pos.x += dx;
+for (const so of w.soldiers) if (so.team === 'allies') so.pos.x += dx;
+await sleep(800);
+s.player.exitTank();
+s.cam.zoom = 0.7;
+await sleep(1500);
+await window.__shot('onfoot');
+// HE burst among the German MG nest at the crossroads
+const he = (await import('/src/data/ammo.ts')).ammo('m48');
+const tgt = w.soldiers.find(x => x.team === 'axis' && x.alive && x.pos.x < 400);
+w.explode(tgt.pos.clone().add(new tgt.pos.constructor(1.5, 0.2, 0)), 0.68, null, true);
+s.player.soldier.pos.x = tgt.pos.x - 22;
+await sleep(150);
+await window.__shot('he1');
+await sleep(900);
+await window.__shot('he2');
+const near = w.soldiers.filter(x => x.team === 'axis' && x.pos.distanceTo(tgt.pos) < 15).map(x => `${x.role}:${x.state}:${x.health.toFixed(0)}`);
+return { near, fps: app.fps };
