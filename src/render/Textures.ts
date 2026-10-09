@@ -443,6 +443,60 @@ export function foliageTexture(seed: number, tint = '#4f6a2e', shape: 'round' | 
   });
 }
 
+/**
+ * A cluster of individual leaves with a ragged alpha edge, for the leaf cards that make up 3-D
+ * tree crowns and hedges. Shading is kept mild: the crown's lighting comes from its normals.
+ */
+export function leafCardTexture(seed: number, tint = '#4f6a2e', narrow = false) {
+  return paintTexture(`leafcard${seed}${tint}${narrow}`, 256, 256, (ctx, w, h) => {
+    const r = new RNG(seed * 13 + 5);
+    const base = hexRgb(tint);
+    const light = mixRgb(base, [214, 222, 120], 0.4);
+    const dark = mixRgb(base, [12, 22, 10], 0.55);
+    ctx.clearRect(0, 0, w, h);
+    // a few twigs under the leaves
+    ctx.strokeStyle = 'rgba(52,40,28,0.9)';
+    ctx.lineWidth = 2.2;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(w / 2 + r.range(-10, 10), h * 0.98);
+      ctx.quadraticCurveTo(w / 2 + r.range(-40, 40), h * 0.6, w / 2 + r.range(-90, 90), h * r.range(0.15, 0.45));
+      ctx.stroke();
+    }
+    const n = narrow ? 260 : 220;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < n; i++) {
+        // denser toward the middle, ragged at the rim
+        const a = r.range(0, Math.PI * 2), rr = Math.pow(r.next(), 0.7) * w * 0.44;
+        const x = w / 2 + Math.cos(a) * rr * (narrow ? 0.7 : 1);
+        const y = h * 0.5 + Math.sin(a) * rr * 0.92;
+        const len = narrow ? r.range(9, 14) : r.range(11, 19);
+        const wid = len * (narrow ? 0.32 : 0.48);
+        const up = 1 - y / h;
+        const c = pass === 0 ? mixRgb(dark, base, r.range(0, 0.6)) : mixRgb(base, light, Math.max(0, Math.min(1, up * 0.9 + r.range(-0.25, 0.25))));
+        if (pass === 1 && r.chance(0.35)) continue;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(a + Math.PI / 2 + r.range(-0.9, 0.9));
+        ctx.fillStyle = rgba(c, 1);
+        ctx.beginPath();
+        ctx.moveTo(0, -len);
+        ctx.quadraticCurveTo(wid, -len * 0.2, 0, len * 0.55);
+        ctx.quadraticCurveTo(-wid, -len * 0.2, 0, -len);
+        ctx.fill();
+        // midrib
+        ctx.strokeStyle = rgba(mixRgb(c, [0, 0, 0], 0.3), 0.5);
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(0, -len * 0.85);
+        ctx.lineTo(0, len * 0.45);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  });
+}
+
 export function barkTexture() {
   return paintTexture('bark', 128, 256, (ctx, w, h) => {
     pixels(ctx, w, h, (x, y) => {
