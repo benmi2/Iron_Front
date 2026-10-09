@@ -13,6 +13,18 @@ import type { Obstacle } from '../world/Obstacle';
 import type { SoldierAI } from '../ai/SoldierAI';
 import type { Squad } from '../ai/Squad';
 import type { CrewMember } from '../vehicles/Crew';
+import { DEPTH_MAX, DEPTH_MIN } from '../world/Terrain';
+
+/** oriented footprint (yaw-only) that a man on foot has to walk round */
+interface Box {
+  key: object;
+  cx: number;
+  cz: number;
+  hx: number;
+  hz: number;
+  cos: number;
+  sin: number;
+}
 
 export type SoldierRole = 'rifleman' | 'smg' | 'mg' | 'at' | 'faust' | 'officer' | 'medic' | 'engineer' | 'crew';
 export type SoldierState = 'ok' | 'wounded' | 'down' | 'dead';
@@ -95,6 +107,10 @@ export class Soldier {
   cover: Obstacle | null = null;
   /** crew member record when this soldier is a bailed-out tanker */
   crewRecord: CrewMember | null = null;
+  /** going round a building / wall that stands in the way: which one and on which side (±1 along its face) */
+  private detour: { key: object; side: number } | null = null;
+  private detourClear = 0;
+  private stuckT = 0;
   revealT = 0;
   stats = { kills: 0, shots: 0, tankHits: 0 };
   ctl = {
@@ -166,6 +182,80 @@ export class Soldier {
     this.rig.setWeapon(this.weapon.def.art);
   }
 
+  /* ------------------------------------------------------------------ obstacle avoidance */
+
+  /** foot-blocking boxes near this man: obstacles and tank hulls (a parked tank is a wall too) */
+  private blockers(w: World): Box[] {
+    const out: Box[] = [];
+    for (const o of w.obstaclesNear(this.pos.x, 10)) {
+      if (!o.destroyed && o.blocksFoot) out.push({ key: o, cx: o.cx, cz: o.cz, hx: o.hx, hz: o.hz, cos: o.cos, sin: o.sin });
+    }
+    for (const t of w.tanks) {
+      if (Math.abs(t.pos.x - this.pos.x) > 12) continue;
+      out.push({ key: t, cx: t.pos.x, cz: t.pos.z, hx: t.model.halfLength + 0.25, hz: t.model.halfWidth + 0.25, cos: Math.cos(t.heading), sin: Math.sin(t.heading) });
+    }
+    return out;
+  }
+
+  /** the first blocking box within `ahead` metres along (ux, uz) */
+  private blockerAhead(boxes: Box[], ux: number, uz: number, ahead: number, skip: object | null = null): Box | null {
+    for (const b of boxes) {
+      if (b.key === skip) continue;
+      for (const d of [ahead * 0.5, ahead]) {
+        const dx = this.pos.x + ux * d - b.cx, dz = this.pos.z + uz * d - b.cz;
+        if (Math.abs(dx * b.cos - dz * b.sin) <= b.hx + 0.3 && Math.abs(dx * b.sin + dz * b.cos) <= b.hz + 0.3) return b;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Walking straight into a house, wall, hedge or parked tank: slide along its face toward a corner and go
+   * round it instead of pushing into it. The side is kept while the same obstacle is in the way
+   * (no dithering) and flips when the way round is blocked or leaves the depth band.
+   */
+  private steer(dt: number, w: World, mx: number, mz: number): [number, number] {
+    const ml = Math.hypot(mx, mz);
+    if (ml < 0.05) {
+      this.detour = null;
+      return [mx, mz];
+    }
+    const ux = mx / ml, uz = mz / ml;
+    const boxes = this.blockers(w);
+    const o = this.blockerAhead(boxes, ux, uz, 1.1);
+    if (!o) {
+      // keep the detour a moment after clearing the corner so the man steps fully past it
+      if (this.detour && (this.detourClear += dt) > 0.4) this.detour = null;
+      return [mx, mz];
+    }
+    this.detourClear = 0;
+    // local frame of the obstacle: which face are we against?
+    const ox = this.pos.x - o.cx, oz = this.pos.z - o.cz;
+    const lx = ox * o.cos - oz * o.sin, lz = ox * o.sin + oz * o.cos;
+    const dlx = ux * o.cos - uz * o.sin, dlz = ux * o.sin + uz * o.cos;
+    const alongZ = Math.abs(lx) - o.hx >= Math.abs(lz) - o.hz; // against an x face: go round along local z
+    const toWorld = (ax: number, az: number): [number, number] => [ax * o.cos + az * o.sin, -ax * o.sin + az * o.cos];
+    const dirOf = (side: number) => (alongZ ? toWorld(0, side) : toWorld(side, 0));
+    const cornerOk = (side: number) => {
+      const wz = o.cz + (alongZ ? toWorld(lx, side * (o.hz + 0.7)) : toWorld(side * (o.hx + 0.7), lz))[1];
+      return wz > DEPTH_MIN + 0.2 && wz < DEPTH_MAX - 0.2;
+    };
+    const open = (side: number) => cornerOk(side) && !this.blockerAhead(boxes, ...dirOf(side), 0.9, o.key);
+    if (!this.detour || this.detour.key !== o.key) {
+      // prefer the side the goal lies toward, otherwise the nearer corner
+      const tang = alongZ ? dlz : dlx;
+      const pos = alongZ ? lz : lx;
+      let side = Math.abs(tang) > 0.25 ? Math.sign(tang) : Math.sign(pos) || 1;
+      if (!open(side) && open(-side)) side = -side;
+      this.detour = { key: o.key, side };
+    }
+    // the way round runs into something else (a wall joined to the house): go the other way
+    if (!open(this.detour.side) && open(-this.detour.side)) this.detour.side *= -1;
+    const [sx, sz] = dirOf(this.detour.side);
+    const m = Math.max(ml, 0.6);
+    return [sx * m, sz * m];
+  }
+
   /* ------------------------------------------------------------------ update */
 
   update(dt: number, w: World) {
@@ -194,11 +284,21 @@ export class Soldier {
     let mx = this.ctl.moveX, mz = this.ctl.moveZ * 0.75;
     const ml = Math.hypot(mx, mz);
     if (ml > 1) { mx /= ml; mz /= ml; }
+    [mx, mz] = this.steer(dt, w, mx, mz);
     this.vel.x = approach(this.vel.x, mx * sp, dt * 14);
     this.vel.z = approach(this.vel.z, mz * sp, dt * 14);
+    const px = this.pos.x, pz = this.pos.z;
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
     w.collideSoldier(this);
+    // pressing on but hardly moving (a corner, a second wall behind the first): try the other side
+    const want = Math.hypot(mx, mz) * sp * dt;
+    if (want > 1e-3 && Math.hypot(this.pos.x - px, this.pos.z - pz) < want * 0.25) this.stuckT += dt;
+    else this.stuckT = Math.max(0, this.stuckT - dt * 2);
+    if (this.stuckT > 0.8) {
+      if (this.detour) this.detour.side *= -1;
+      this.stuckT = 0;
+    }
     this.pos.y = w.terrain.height(this.pos.x, this.pos.z);
     this.crouch = approach(this.crouch, this.ctl.crouch || this.suppression > 0.75 ? 1 : 0, dt * 4);
 

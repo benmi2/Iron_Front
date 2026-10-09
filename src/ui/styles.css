@@ -124,6 +124,10 @@ button { font-family: var(--font); letter-spacing: 0.04em; cursor: pointer; }
 .gs-reticle line, .gs-reticle polygon { stroke: #111; stroke-width: 1.6; fill: #111; }
 .gs-label { position: absolute; bottom: 4px; left: 0; right: 0; text-align: center; font-family: var(--font); font-size: 13px; color: #f0e8d0; text-shadow: 0 1px 2px #000; }
 .gs-title { position: absolute; top: 3px; left: 8px; font-family: var(--font); font-size: 10px; letter-spacing: 0.12em; color: rgba(240,232,208,0.8); text-shadow: 0 1px 2px #000; }
+.gun-sight.manual { top: 50%; width: min(980px, 76vw); height: min(560px, 62vh); transform: translate(-50%, -50%); }
+.gs-gun { position: absolute; display: none; width: 30px; height: 30px; margin: -15px 0 0 -15px; border: 2.5px solid rgba(255,190,90,0.9); border-radius: 50%; box-shadow: 0 0 3px #000; }
+.gs-gun.laid { border-color: rgba(140,255,130,0.95); }
+.gs-gun.off { border-style: dashed; opacity: 0.7; }
 .intel-layer { position: absolute; inset: 0; pointer-events: none; }
 .intel-mark { position: absolute; transform: translate(-50%, -50%); border: 2px solid #ff4a3a; color: #ffb0a0; font-family: var(--font); font-size: 11px; padding: 0 4px; background: rgba(60,0,0,0.35); letter-spacing: 0.06em; }
 .intel-mark.soldier { width: 12px; height: 12px; padding: 0; transform: translate(-50%, -50%) rotate(45deg); font-size: 9px; text-align: center; line-height: 9px; }

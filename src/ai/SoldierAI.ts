@@ -150,6 +150,8 @@ export class SoldierAI {
       // stand on the near side of the obstacle (away from the threat)
       const px = o.cx - dir * (o.hx + 0.6);
       const pz = clamp(o.cz + (Math.random() - 0.5) * o.hz * 1.4, DEPTH_MIN, DEPTH_MAX);
+      // beyond the map edge the spot can never be reached
+      if (px < w.x0 + 3 || px > w.x1 - 3) continue;
       if (w.soldiers.some((m) => m !== s && m.alive && Math.abs(m.pos.x - px) < 1.1 && Math.abs(m.pos.z - pz) < 1.1)) continue;
       const score = Math.abs(px - gx) * 0.8 + Math.abs(pz - gz) * 0.4 + Math.abs(px - s.pos.x) * 0.2 + Math.random() * 6;
       if (score < best.score) best = { x: px, z: pz, o, score };
@@ -212,6 +214,14 @@ export class SoldierAI {
         tx = s.pos.x;
       }
     }
+    // a squad slot or cover spot that falls inside a building / wall can never be reached:
+    // move it to the nearest spot just outside
+    for (const o of w.obstaclesNear(tx, 10)) {
+      if (o.destroyed || !o.blocksFoot) continue;
+      const p = o.pushOut(tx, tz, 0.7);
+      if (p) { tx += p[0]; tz = clamp(tz + p[1], DEPTH_MIN, DEPTH_MAX); }
+    }
+    tx = clamp(tx, w.x0 + 2.5, w.x1 - 2.5);
     const dx = tx - s.pos.x, dz = tz - s.pos.z;
     const far = Math.hypot(dx, dz);
     const pinned = s.suppression > 0.8 && s.role !== 'crew';

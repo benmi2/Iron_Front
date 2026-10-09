@@ -15,6 +15,11 @@ export class Input {
   lmbPressed = false;
   rmbPressed = false;
   wheel = 0;
+  /** relative mouse motion since the last `consumeMotion` (px; works under pointer lock) */
+  private dx = 0;
+  private dy = 0;
+  /** set by gameplay: holding the right button captures the mouse (free gunner's sight) */
+  rmbLocks = false;
   /** true while a text field / menu has focus: gameplay ignores keys */
   suspended = false;
 
@@ -34,16 +39,29 @@ export class Input {
     window.addEventListener('blur', () => {
       this.held.clear();
       this.lmb = this.rmb = false;
+      this.unlockPointer();
+    });
+    // Esc / browser released the lock: end the sight view as if the button was let go
+    document.addEventListener('pointerlockchange', () => {
+      if (!this.locked) this.rmb = false;
     });
     el.addEventListener('mousemove', (e) => this.move(e));
     el.addEventListener('mousedown', (e) => {
       this.move(e);
       if (e.button === 0) { this.lmb = true; this.lmbPressed = true; }
-      if (e.button === 2) { this.rmb = true; this.rmbPressed = true; }
+      if (e.button === 2) {
+        this.rmb = true;
+        this.rmbPressed = true;
+        // must be requested inside the user gesture
+        if (this.rmbLocks) this.lockPointer();
+      }
     });
     window.addEventListener('mouseup', (e) => {
       if (e.button === 0) this.lmb = false;
-      if (e.button === 2) this.rmb = false;
+      if (e.button === 2) {
+        this.rmb = false;
+        this.unlockPointer();
+      }
     });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     el.addEventListener('wheel', (e) => {
@@ -67,6 +85,10 @@ export class Input {
   }
 
   private move(e: MouseEvent) {
+    this.dx += e.movementX || 0;
+    this.dy += e.movementY || 0;
+    // under pointer lock the cursor is frozen: keep the last free position
+    if (this.locked) return;
     const r = this.el.getBoundingClientRect();
     this.mouseX = e.clientX - r.left;
     this.mouseY = e.clientY - r.top;
@@ -92,6 +114,30 @@ export class Input {
     this.released.clear();
     this.lmbPressed = false;
     this.rmbPressed = false;
+  }
+
+  get locked() {
+    return document.pointerLockElement === this.el;
+  }
+
+  /** capture the mouse (hidden cursor, unbounded relative motion) — call from a mouse event */
+  lockPointer() {
+    if (this.locked) return;
+    this.dx = this.dy = 0;
+    try {
+      const r = this.el.requestPointerLock() as unknown as Promise<void> | undefined;
+      r?.catch?.(() => {});
+    } catch { /* not available: relative motion still works until the cursor leaves the window */ }
+  }
+
+  unlockPointer() {
+    if (this.locked) document.exitPointerLock();
+  }
+
+  consumeMotion() {
+    const m = { x: this.dx, y: this.dy };
+    this.dx = this.dy = 0;
+    return m;
   }
 
   consumeWheel() {

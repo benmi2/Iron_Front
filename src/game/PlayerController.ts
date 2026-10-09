@@ -9,6 +9,8 @@ import type { CameraRig } from '../render/CameraRig';
 import { pick, type PickResult } from './Picking';
 import type { Session } from './Session';
 
+const DEG = Math.PI / 180;
+
 /**
  * Direct control of one unit at a time — a tank (as its commander) or a soldier on foot —
  * Men-of-War style: leave the tank, fight on foot, climb into another friendly vehicle.
@@ -29,6 +31,14 @@ export class PlayerController {
   /** locked target (E): the gun stays on it and the camera frames it */
   lock: Tank | Soldier | null = null;
   private lockLost = 0;
+  /** free gunner's sight (RMB held in a tank): the mouse steers the telescope, the gun follows */
+  manualSight = false;
+  /** sight line in world space: yaw (dir = cos·x, −sin·z), pitch (rad), field of view (deg) */
+  sightYaw = 0;
+  sightPitch = 0;
+  sightFov = 8;
+  readonly sightEye = new THREE.Vector3();
+  readonly sightDir = new THREE.Vector3(1, 0, 0);
   /** last tap time of A / D (for double-tap turn-around) */
   private lastTap = { A: -9, D: -9 };
 
@@ -144,13 +154,32 @@ export class PlayerController {
       this.deadT += dt;
       return;
     }
-    // aim point under the cursor
-    this.ray.setFromCamera(new THREE.Vector2(input.ndcX, input.ndcY), camera);
     const ignore: (Tank | Soldier)[] = [this.soldier];
     if (this.tank) ignore.push(this.tank);
-    this.aim = pick(w, this.ray.ray, ignore, 2600, (u) => u.team === this.unit.team || this.s.visibleToPlayer(u));
+    const seen = (u: Tank | Soldier) => u.team === this.unit.team || this.s.visibleToPlayer(u);
+    // free gunner's sight: holding RMB in a tank captures the mouse; it steers the telescope
+    // directly and the gun is laid on whatever sits under the sight's centre
+    const t = this.tank;
+    input.rmbLocks = !!t && t.state === 'active';
+    const manual = !!t && input.rmb && t.state === 'active';
+    if (!manual && input.locked) input.unlockPointer();
+    if (manual && !this.manualSight) this.openSight(t!);
+    this.manualSight = manual;
+    const motion = input.consumeMotion();
+    if (manual) {
+      const k = (this.sightFov * DEG) / 380;
+      this.sightYaw -= motion.x * k;
+      this.sightPitch = THREE.MathUtils.clamp(this.sightPitch - motion.y * k, -14 * DEG, 25 * DEG);
+      this.updateSightRay(t!);
+      this.ray.ray.set(this.sightEye.clone().addScaledVector(this.sightDir, 4), this.sightDir);
+      this.aim = pick(w, this.ray.ray, ignore, 2600, seen);
+    } else {
+      // aim point under the cursor
+      this.ray.setFromCamera(new THREE.Vector2(input.ndcX, input.ndcY), camera);
+      this.aim = pick(w, this.ray.ray, ignore, 2600, seen);
+    }
     // aim assist (not in realism mode): a spotted enemy near the cursor is taken as the target
-    if (!w.realism && (!this.aim.unit || this.aim.unit.team === this.unit.team)) {
+    if (!manual && !w.realism && (!this.aim.unit || this.aim.unit.team === this.unit.team)) {
       const snap = this.snapTarget(input, camera);
       if (snap) this.aim = { point: snap.kind === 'tank' ? snap.centerWorld().add(new THREE.Vector3(0, 0.25, 0)) : snap.center, unit: snap, dist: snap.pos.distanceTo(camera.position) };
     }
@@ -162,35 +191,44 @@ export class PlayerController {
       const gone = L.kind === 'tank' ? L.state !== 'active' : !L.alive;
       this.lockLost = this.s.visibleToPlayer(L) ? 0 : this.lockLost + dt;
       if (gone || this.lockLost > 4 || !this.tank) this.lock = null;
-      else if (!(this.aim.unit && this.aim.unit.team !== this.unit.team)) {
+      else if (!manual && !(this.aim.unit && this.aim.unit.team !== this.unit.team)) {
         const p = L.kind === 'tank' ? L.centerWorld().add(new THREE.Vector3(0, 0.25, 0)) : L.center;
         this.aim = { point: p, unit: L, dist: p.distanceTo(camera.position) };
       }
     }
-    this.scope = input.rmb;
+    this.scope = input.rmb && !manual;
     cam.scope = this.scope ? 1 : 0;
     const wheel = input.consumeWheel();
-    if (wheel !== 0) cam.setZoomStep(wheel);
+    // in the sight the wheel changes magnification instead of the battlefield zoom
+    if (wheel !== 0 && manual) this.sightFov = THREE.MathUtils.clamp(this.sightFov * (wheel > 0 ? 1.2 : 1 / 1.2), 2, 24);
+    else if (wheel !== 0) cam.setZoomStep(wheel);
     const focus = this.unit.pos;
     // camera lead from the cursor's SCREEN position (no feedback loop): pointing toward the right
     // edge shows most of a screen further ahead; holding the cursor AT the edge keeps scrolling
     // further (to ~700 m). Looking back the other way, or Q, brings the view home.
     const nx = THREE.MathUtils.clamp(input.ndcX, -1, 1);
     const vw = cam.viewWidth;
-    if (Math.abs(nx) > 0.86) this.edgePan += Math.sign(nx) * vw * 1.2 * dt * (0.35 + (Math.abs(nx) - 0.86) / 0.14);
+    if (manual) { /* cursor is captured: no edge scrolling */ }
+    else if (Math.abs(nx) > 0.86) this.edgePan += Math.sign(nx) * vw * 1.2 * dt * (0.35 + (Math.abs(nx) - 0.86) / 0.14);
     else if (this.edgePan !== 0 && Math.sign(nx) !== Math.sign(this.edgePan) && Math.abs(nx) > 0.2) this.edgePan *= Math.exp(-dt * 3.5);
     if (input.pressed('Q')) this.edgePan = 0;
     this.edgePan = THREE.MathUtils.clamp(this.edgePan, -700, 700);
     let lead = nx * vw * 0.62 + this.edgePan;
     // frame a locked target, or whoever just hit us, together with our own unit
     const th = this.s.threat;
-    const frame = this.lock ?? (th && this.s.time - th.t < 6 && this.s.visibleToPlayer(th.u) ? th.u : null);
+    const frame = manual ? null : this.lock ?? (th && this.s.time - th.t < 6 && this.s.visibleToPlayer(th.u) ? th.u : null);
     if (frame) {
       const dx = frame.pos.x - focus.x;
-      cam.autoZoom = THREE.MathUtils.clamp((Math.abs(dx) + 50) / cam.baseWidth, 1, 7);
+      // beyond ~3x the haze and the tiny scale make targets unreadable: the gunner's sight inset covers the rest
+      cam.autoZoom = THREE.MathUtils.clamp((Math.abs(dx) + 50) / cam.baseWidth, 1, 3);
       lead = dx / 2 + nx * vw * 0.15;
       this.edgePan = 0;
     } else cam.autoZoom = 1;
+    // looking through the sight: keep our tank in view, swung toward where the gun is going
+    if (manual && this.aim) {
+      lead = THREE.MathUtils.clamp((this.aim.point.x - focus.x) / 2, -vw * 0.35, vw * 0.35);
+      this.edgePan = 0;
+    }
     // keep the view inside the map
     cam.lookAhead = THREE.MathUtils.clamp(focus.x + lead, w.x0 + vw * 0.4, w.x1 - vw * 0.4) - focus.x;
 
@@ -259,6 +297,19 @@ export class PlayerController {
     }
     if (input.pressed('F')) this.exitTank();
     void dt;
+  }
+
+  /** open the sight along the gun, so the turret does not jump */
+  private openSight(t: Tank) {
+    const dir = t.boreDirWorld();
+    this.sightYaw = Math.atan2(-dir.z, dir.x);
+    this.sightPitch = THREE.MathUtils.clamp(Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1)), -14 * DEG, 25 * DEG);
+  }
+
+  private updateSightRay(t: Tank) {
+    t.eyeWorld(this.sightEye);
+    const c = Math.cos(this.sightPitch);
+    this.sightDir.set(Math.cos(this.sightYaw) * c, Math.sin(this.sightPitch), -Math.sin(this.sightYaw) * c);
   }
 
   /** E: lock the nearest visible enemy, pressing again cycles through them (then unlocks) */

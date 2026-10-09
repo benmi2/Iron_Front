@@ -284,7 +284,7 @@ export class Menus {
         <label>Weather <select name="weather"><option value="clear">Clear</option><option value="overcast">Overcast</option><option value="mist">Mist</option></select></label></form>`;
     }
     const s = h(`<div class="screen briefing">${this.header()}<div class="b-body">${body}
-      <div class="controls-hint">Keys: A/D drive (hold the other way = reverse, double-tap = turn around) · W/S lanes · cursor at screen edge looks further · Q recentre · mouse aim · LMB fire · 1–5 ammo · RMB sight view · F leave/board vehicle · X X-ray · Tab map · Esc pause · F1 help</div>
+      <div class="controls-hint">Keys: A/D drive (hold the other way = reverse, double-tap = turn around) · W/S lanes · cursor at screen edge looks further · Q recentre · mouse aim · LMB fire · 1–5 ammo · hold RMB free gunner's sight · F leave/board vehicle · X X-ray · Tab map · Esc pause · F1 help</div>
       <div class="b-btns"><button data-a="back">◂ Back</button><button data-a="go" class="deploy">Begin ▸</button></div></div></div>`);
     s.addEventListener('click', (e) => {
       const a = (e.target as HTMLElement).closest('button')?.dataset.a;
@@ -343,7 +343,7 @@ export class Menus {
     const s = h(`<div class="screen briefing">${this.header()}<div class="b-body"><h2>Settings</h2><form class="cfg">
       <label>Master volume <input type="range" name="volume" min="0" max="1" step="0.05" value="${st.volume}"></label>
       <label>Realism mode (no hit markers / penetration hints, manual range drum) <input type="checkbox" name="realism" ${st.realism ? 'checked' : ''}></label>
-      <label>Graphics quality <select name="quality"><option value="high" ${st.quality === 'high' ? 'selected' : ''}>High (bloom, 4K shadows)</option><option value="medium" ${st.quality === 'medium' ? 'selected' : ''}>Medium</option></select></label>
+      <label>Graphics quality <select name="quality"><option value="high" ${st.quality === 'high' ? 'selected' : ''}>High (depth of field, 4K shadows, sharp)</option><option value="medium" ${st.quality === 'medium' ? 'selected' : ''}>Medium (faster)</option></select></label>
       <label>Reset all progression <button type="button" data-a="reset" class="danger">Reset profile</button></label></form>
       <div class="b-btns"><button data-a="back">◂ Back</button></div></div></div>`);
     s.addEventListener('input', () => {

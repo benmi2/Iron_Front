@@ -308,8 +308,10 @@ export class HUD {
     const s = this.s;
     const p = s.player;
     const input = s.input;
-    this.cross.style.left = `${input.mouseX}px`;
-    this.cross.style.top = `${input.mouseY}px`;
+    // looking through the free sight the cursor is captured: the ring sits on the sight's centre
+    const sc = p.manualSight && this.sight ? this.sight.centre() : null;
+    this.cross.style.left = `${sc ? sc.x : input.mouseX}px`;
+    this.cross.style.top = `${sc ? sc.y : input.mouseY}px`;
     const ring = this.cross.querySelector('.fg') as SVGCircleElement;
     const t = p.tank;
     const aim = p.aim;
@@ -329,6 +331,7 @@ export class HUD {
         this.gunMark.style.left = `${gx}px`;
         this.gunMark.style.top = `${gy}px`;
         this.gunMark.classList.toggle('on', Math.hypot(gx - input.mouseX, gy - input.mouseY) < 10);
+        if (p.manualSight) this.gunMark.style.display = 'none';
       }
     }
     // our own unit off-screen: arrow at the screen edge
@@ -410,12 +413,26 @@ export class HUD {
     const aimU = s.player.aim?.unit;
     const tgt = L ?? (s.input.rmb && aimU && aimU.team !== s.playerTeam ? aimU : null);
     if (this.sight) {
-      if (t && tgt) {
+      const aim = s.player.aim;
+      if (t && s.player.manualSight && aim) {
+        // free sight: the telescope follows the mouse; the gun marker shows where the barrel is laid
+        const u = aim.unit && aim.unit.team !== s.playerTeam ? aim.unit : null;
+        const name = u ? (u.kind === 'tank' ? u.spec.short : u.role === 'at' || u.role === 'faust' ? 'AT team' : 'infantry') + ' · ' : '';
+        const range = aim.point.distanceTo(t.muzzleWorld());
+        this.sight.aimDir(s.player.sightEye, s.player.sightDir, s.player.sightFov, `${name}${Math.round(range)} m · ${(4 * (8 / s.player.sightFov)).toFixed(1)}× · ${t.loaded ? t.loaded.name + ' loaded' : 'loading…'}`);
+        const round = t.loaded ?? getAmmo(t.selected);
+        const muzzle = t.muzzleWorld();
+        const gp = muzzle.clone().addScaledVector(t.boreDirWorld(), range);
+        gp.y -= range * Math.tan(rangeTable(round).superelevation(range));
+        this.sight.setGunMark(gp, t.layT > 0.2);
+        this.sight.show(true, true);
+      } else if (t && tgt) {
         const p = tgt.kind === 'tank' ? tgt.centerWorld() : tgt.center;
         const name = tgt.kind === 'tank' ? tgt.spec.short : tgt.role === 'at' || tgt.role === 'faust' ? 'AT team' : 'infantry';
         this.sight.aim(t.eyeWorld(), p, `${name} · ${Math.round(p.distanceTo(t.muzzleWorld()))} m · ${t.loaded ? t.loaded.name + ' loaded' : 'loading…'}`);
-        this.sight.show(true);
-      } else this.sight.show(false);
+        this.sight.setGunMark(null, false);
+        this.sight.show(true, false);
+      } else this.sight.show(false, false);
     }
   }
 
@@ -476,7 +493,7 @@ export class HUD {
 const HELP_HTML = `<h3>Controls</h3><div class="cols"><div><h4>Tank</h4>
 <p><b>A / D</b> drive left / right — holding the other way reverses (slowly, as the real tanks did)</p><p><b>Double-tap A / D</b> or <b>T</b> turn around</p><p><b>W / S</b> change depth lane</p>
 <p><b>Cursor at the screen edge</b> look further along the battlefield · <b>Q</b> recentre</p>
-<p><b>Mouse</b> aim turret · <b>LMB</b> fire · <b>Space</b> coaxial MG</p><p><b>E</b> lock the nearest visible enemy (press again to cycle): the gun tracks it, the camera frames it and the gunner's sight opens</p><p><b>RMB</b> binocular / sight view · <b>Wheel</b> zoom</p>
+<p><b>Mouse</b> aim turret · <b>LMB</b> fire · <b>Space</b> coaxial MG</p><p><b>E</b> lock the nearest visible enemy (press again to cycle): the gun tracks it, the camera frames it and the gunner's sight opens</p><p><b>RMB</b> (hold, in a tank) free gunner's sight: the mouse turns the telescope, the turret follows, the ring shows where the gun is laid; <b>Wheel</b> magnification in the sight</p><p>On foot: <b>RMB</b> binocular view · <b>Wheel</b> zoom</p>
 <p><b>1–5</b> next round (same key again: unload &amp; reload) · <b>R</b> swap round</p><p><b>B</b> button up / head out · <b>G</b> gyrostabilizer</p>
 <p><b>F</b> leave the vehicle · <b>C</b> crew panel · <b>X</b> X-ray · <b>Tab</b> tactical map</p></div>
 <div><h4>On foot</h4><p><b>A / D</b> move · <b>W / S</b> depth · <b>Shift</b> sprint</p><p><b>C</b> crouch · <b>LMB</b> fire · <b>R</b> reload · <b>1 / 2</b> weapons</p>
